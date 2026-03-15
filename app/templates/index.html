@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Bi-LSTM Dashboard</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* General body styling */
+        body {
+            background-color: #121212;
+            color: #f8f9fa;
+            font-weight: bold;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .container {
+            margin-top: 50px;
+        }
+
+        /* Spinner styling */
+        #spinner {
+            display: none;
+            margin: 20px auto;
+        }
+
+        /* Prediction card styling */
+        .prediction-card {
+            margin-top: 20px;
+            padding: 20px;
+            background-color: #1f1f1f;
+            border-radius: 10px;
+        }
+
+        .prediction-green { color: #28a745; }
+        .prediction-red { color: #dc3545; }
+
+        #chart-container {
+            margin-top: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Crypto Bi-LSTM Prediction Dashboard</h1>
+
+        <!-- Cryptocurrency Selection -->
+        <div class="row mb-3">
+            <div class="col-md-6 offset-md-3">
+                <select id="crypto-select" class="form-select">
+                    <option value="bitcoin" selected>Bitcoin (BTC)</option>
+                    <option value="ethereum">Ethereum (ETH)</option>
+                    <option value="solana">Solana (SOL)</option>
+                    <option value="tether">Tether (USDT)</option>
+                    <option value="binancecoin">Binance Coin (BNB)</option>
+                    <option value="cardano">Cardano (ADA)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Predict Button -->
+        <div class="row mb-4">
+            <div class="col-md-6 offset-md-3 text-center">
+                <button id="predict-btn" class="btn btn-primary btn-lg w-100">Predict</button>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="spinner" class="text-center">
+            <div class="spinner-border text-light" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+
+        <!-- Prediction Card -->
+        <div id="prediction-info" class="prediction-card text-center" style="display: none;">
+            <h2 id="current-price"></h2>
+            <h3>Next-Day Prediction: <span id="next-prediction"></span></h3>
+        </div>
+
+        <!-- Chart -->
+        <div id="chart-container">
+            <canvas id="priceChart"></canvas>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        const cryptoSelect = document.getElementById("crypto-select");
+        const predictBtn = document.getElementById("predict-btn");
+        const spinner = document.getElementById("spinner");
+        const predictionInfo = document.getElementById("prediction-info");
+        const currentPriceEl = document.getElementById("current-price");
+        const nextPredictionEl = document.getElementById("next-prediction");
+        const ctx = document.getElementById("priceChart").getContext("2d");
+        let chart;
+        let updateInterval;
+
+        // Fetch prediction + historical data and update chart
+        async function fetchPrediction() {
+            const crypto = cryptoSelect.value;
+
+            try {
+                spinner.style.display = "block";
+
+                const response = await fetch("/predict", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ crypto })
+                });
+
+                const data = await response.json();
+                spinner.style.display = "none";
+
+                // Current price
+                currentPriceEl.innerText = `Current Price: $${data.current_price.toFixed(2)}`;
+
+                // Next-day prediction
+                const nextPrice = data.next_prediction;
+                const colorClass = nextPrice >= data.current_price ? "prediction-green" : "prediction-red";
+                nextPredictionEl.innerText = `$${nextPrice.toFixed(2)}`;
+                nextPredictionEl.className = colorClass;
+                predictionInfo.style.display = "block";
+
+                // Combine historical + predicted prices for chart
+                // Historical: use last 60+ days
+                const historicalDates = [...data.dates]; // Currently API only returns future dates
+                const historicalPrices = [...data.forecast]; // We'll overwrite with real historical prices if available
+
+                // If API returns only forecast, you can fetch historical from backend if implemented
+                // Here we assume forecast is next 7 days; historical will be shown as flat placeholder
+                // To show real historical, your backend can return it in JSON (recommended)
+                const chartLabels = [...historicalDates]; // For simplicity using forecast dates
+                const predictedPrices = [...data.forecast];
+
+                // Destroy old chart
+                if (chart) chart.destroy();
+
+                chart = new Chart(ctx, {
+                    type: "line",
+                    data: {
+                        labels: chartLabels,
+                        datasets: [
+                            {
+                                label: "Predicted Price",
+                                data: predictedPrices,
+                                borderColor: "#0d6efd",
+                                backgroundColor: "rgba(13,110,253,0.2)",
+                                tension: 0.3,
+                                fill: true,
+                                pointRadius: 5
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { labels: { color: "#f8f9fa" } }
+                        },
+                        scales: {
+                            x: { ticks: { color: "#f8f9fa" }, grid: { color: "#444" } },
+                            y: { ticks: { color: "#f8f9fa" }, grid: { color: "#444" } }
+                        }
+                    }
+                });
+
+            } catch (error) {
+                spinner.style.display = "none";
+                console.error("Error fetching prediction:", error);
+            }
+        }
+
+        // Live updating every 60 seconds
+        function startLiveUpdates() {
+            if (updateInterval) clearInterval(updateInterval);
+            fetchPrediction();
+            updateInterval = setInterval(fetchPrediction, 60000);
+        }
+
+        // Event listeners
+        predictBtn.addEventListener("click", startLiveUpdates);
+        cryptoSelect.addEventListener("change", startLiveUpdates);
+</script>
+</body>
+</html>
